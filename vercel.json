@@ -15,6 +15,5 @@
       "destination": "/index.html"
     }
   ],
-  "installCommand": "npm install",
-  "nodeVersion": "20.x"
+  "installCommand": "npm install"
 }
