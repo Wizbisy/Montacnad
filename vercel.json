@@ -16,5 +16,5 @@
     }
   ],
   "installCommand": "npm install",
-  "nodeVersion": "20.x"  // Switch to a stable LTS version
+  "nodeVersion": "20.x"
 }
