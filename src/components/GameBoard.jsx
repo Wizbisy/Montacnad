@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useContract, useSigner } from 'ethers';
-import { ethers } from 'ethers';
+import { useContract, useSigner } from 'wagmi'; // Updated import
+import { ethers } from 'ethers'; // For utility functions
 import MontacnadABI from '../MontacnadABI.json';
 import { getFollows, submitCast } from '@farcaster/hub-web';
 
@@ -18,8 +18,15 @@ function GameBoard({ farcasterUser }) {
   const [movePosition, setMovePosition] = useState('');
   const [moveSalt, setMoveSalt] = useState('');
   const [isCommitting, setIsCommitting] = useState(false);
-  const signer = useSigner();
-  const contract = useContract(CONTRACT_ADDRESS, MontacnadABI, signer);
+
+  // Get signer from wagmi
+  const { data: signer } = useSigner();
+  // Use wagmi's useContract hook
+  const contract = useContract({
+    address: CONTRACT_ADDRESS,
+    abi: MontacnadABI,
+    signerOrProvider: signer,
+  });
 
   useEffect(() => {
     const fetchFollowers = async () => {
