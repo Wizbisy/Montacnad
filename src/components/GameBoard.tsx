@@ -4,14 +4,14 @@ import { ethers } from 'ethers';
 import MontacnadABI from '../MontacnadABI.json';
 import { getFollows, submitCast } from '@farcaster/hub-web';
 
-const CONTRACT_ADDRESS = process.env.REACT_APP_CONTRACT_ADDRESS;
-const VERCEL_URL = 'https://montacnad.vercel.app';
+const CONTRACT_ADDRESS = process.env.REACT_APP_CONTRACT_ADDRESS || '0x650122B54f0D6f264C1B405225753ddA066517e2';
 
 interface GameBoardProps {
   farcasterUser: {
     fid: number;
     address: string;
-    signer: any;
+    username: string;
+    signer: any; 
   } | null;
 }
 
@@ -27,17 +27,22 @@ function GameBoard({ farcasterUser }: GameBoardProps) {
   const [moveSalt, setMoveSalt] = useState<string>('');
   const [isCommitting, setIsCommitting] = useState(false);
 
-  // Get account and signer from wagmi
   const { address: userAddress } = useAccount();
   const { data: signer } = useSigner();
   const provider = useProvider();
 
-  // Initialize contract
   const contract = useContract({
     address: CONTRACT_ADDRESS,
     abi: MontacnadABI,
     signerOrProvider: signer || provider,
   });
+
+  useEffect(() => {
+    if (!CONTRACT_ADDRESS) {
+      console.error('REACT_APP_CONTRACT_ADDRESS is not set.');
+      alert('Contract address is missing. Please check your environment variables.');
+    }
+  }, []);
 
   useEffect(() => {
     const fetchFollowers = async () => {
@@ -47,6 +52,7 @@ function GameBoard({ farcasterUser }: GameBoardProps) {
           setFollowers(follows.data || []);
         } catch (error) {
           console.error('Error fetching followers:', error);
+          alert('Failed to fetch followers.');
         }
       }
     };
@@ -55,66 +61,64 @@ function GameBoard({ farcasterUser }: GameBoardProps) {
 
   useEffect(() => {
     const fetchGameState = async () => {
-      if (gameId && contract && userAddress) {
-        try {
-          const state = await contract.games(gameId);
-          const gamePlayers = await contract.players(gameId);
-          const rawBoard = state & 0x3FFFF;
-          const boardArray = Array(9).fill(0);
-          for (let i = 0; i < 9; i++) {
-            boardArray[i] = (rawBoard >> (i * 2)) & 0x3;
-          }
-          setBoard(boardArray);
-          setGameState(state);
-          setCurrentPlayer((state >> 18) & 0x1 === 0 ? gamePlayers[0] : gamePlayers[1]);
-          if ((state >> 19) & 0x3 !== 2) {
-            const winner = (state >> 18) & 0x1 === 0 ? gamePlayers[1] : gamePlayers[0];
-            setGameResult(
-              winner === ethers.constants.AddressZero
-                ? "It's a draw!"
-                : `Winner: ${winner === userAddress ? 'You' : 'Opponent'}!`
-            );
-          }
-        } catch (error) {
-          console.error('Error fetching game state:', error);
+      if (!gameId || !contract || !userAddress) return;
+      try {
+        const state = await contract.games(gameId);
+        const player1 = await contract.players(gameId, 0);
+        const player2 = await contract.players(gameId, 1);
+        const gamePlayers = [player1, player2];
+        const rawBoard = state & 0x3FFFF;
+        const boardArray = Array(9).fill(0);
+        for (let i = 0; i < 9; i++) {
+          boardArray[i] = (rawBoard >> (i * 2)) & 0x3;
         }
+        setBoard(boardArray);
+        setGameState(state);
+        setCurrentPlayer((state >> 18) & 0x1 === 0 ? player1 : player2);
+        if ((state >> 19) & 0x3 !== 2) {
+          const winner = (state >> 18) & 0x1 === 0 ? player2 : player1;
+          setGameResult(
+            winner === ethers.constants.AddressZero
+              ? "It's a draw!"
+              : `Winner: ${winner === userAddress ? 'You' : 'Opponent'}!`
+          );
+        }
+      } catch (error) {
+        console.error('Error fetching game state:', error);
+        alert('Failed to fetch game state.');
       }
     };
     fetchGameState();
   }, [gameId, contract, userAddress]);
 
   const handleCreateGame = async () => {
-    if (!opponent) {
-      alert('Please select or enter an opponent address.');
+    if (!opponent || !ethers.utils.isAddress(opponent)) {
+      alert('Please enter a valid opponent address.');
       return;
     }
     if (!contract || !signer) {
-      alert('Contract or signer not available.');
+      alert('Wallet not connected or contract unavailable.');
       return;
     }
     try {
       const betAmount = ethers.utils.parseEther('0.01');
-      const tx = await contract.createGame(opponent, betAmount, false, { value: betAmount });
+      const tx = await contract.createGame(opponent, betAmount, { value: betAmount });
       const receipt = await tx.wait();
-      const newGameId = receipt.events[0].args.gameId.toNumber();
+      const gameCreatedEvent = receipt.events?.find((e: any) => e.event === 'GameCreated');
+      if (!gameCreatedEvent) throw new Error('GameCreated event not found');
+      const newGameId = gameCreatedEvent.args.gameId.toNumber:form-data
       setGameId(newGameId);
       setBoard(Array(9).fill(0));
       setGameResult(null);
       setIsCommitting(false);
     } catch (error) {
       console.error('Error creating game:', error);
-      alert('Failed to create game. Check console for details.');
+      alert('Failed to create game.');
     }
   };
 
   const handleCommitMove = async (position: number) => {
-    if (
-      board[position] !== 0 ||
-      currentPlayer !== userAddress ||
-      gameResult ||
-      !contract ||
-      !signer
-    ) {
+    if (board[position] !== 0 || currentPlayer !== userAddress || gameResult || !contract || !signer) {
       return;
     }
     const salt = ethers.utils.hexlify(ethers.utils.randomBytes(32));
@@ -130,13 +134,13 @@ function GameBoard({ farcasterUser }: GameBoardProps) {
       alert('Move committed! Please reveal your move.');
     } catch (error) {
       console.error('Error committing move:', error);
-      alert('Failed to commit move. Check console for details.');
+      alert('Failed to commit move.');
     }
   };
 
   const handleRevealMove = async () => {
-    if (!contract || !signer) {
-      alert('Contract or signer not available.');
+    if (!contract || !signer || !movePosition || !moveSalt) {
+      alert('Cannot reveal move: incomplete data.');
       return;
     }
     try {
@@ -144,7 +148,9 @@ function GameBoard({ farcasterUser }: GameBoardProps) {
       await tx.wait();
       setIsCommitting(false);
       const state = await contract.games(gameId);
-      const gamePlayers = await contract.players(gameId);
+      const player1 = await contract.players(gameId, 0);
+      const player2 = await contract.players(gameId, 1);
+      const gamePlayers = [player1, player2];
       const rawBoard = state & 0x3FFFF;
       const boardArray = Array(9).fill(0);
       for (let i = 0; i < 9; i++) {
@@ -152,9 +158,9 @@ function GameBoard({ farcasterUser }: GameBoardProps) {
       }
       setBoard(boardArray);
       setGameState(state);
-      setCurrentPlayer((state >> 18) & 0x1 === 0 ? gamePlayers[0] : gamePlayers[1]);
+      setCurrentPlayer((state >> 18) & 0x1 === 0 ? player1 : player2);
       if ((state >> 19) & 0x3 !== 2) {
-        const winner = (state >> 18) & 0x1 === 0 ? gamePlayers[1] : gamePlayers[0];
+        const winner = (state >> 18) & 0x1 === 0 ? player2 : player1;
         setGameResult(
           winner === ethers.constants.AddressZero
             ? "It's a draw!"
@@ -163,41 +169,41 @@ function GameBoard({ farcasterUser }: GameBoardProps) {
       }
     } catch (error) {
       console.error('Error revealing move:', error);
-      alert('Failed to reveal move. Check console for details.');
+      alert('Failed to reveal move.');
     }
   };
 
   const handleTimeout = async () => {
     if (!contract || !signer) {
-      alert('Contract or signer not available.');
+      alert('Wallet not connected or contract unavailable.');
       return;
     }
     try {
       const tx = await contract.checkTimeout(gameId);
       await tx.wait();
       const state = await contract.games(gameId);
-      const gamePlayers = await contract.players(gameId);
-      const winner = (state >> 18) & 0x1 === 0 ? gamePlayers[1] : gamePlayers[0];
+      const player1 = await contract.players(gameId, 0);
+      const player2 = await contract.players(gameId, 1);
+      const winner = (state >> 18) & 0x1 === 0 ? player2 : player1;
       setGameResult(`Timed out! Winner: ${winner === userAddress ? 'You' : 'Opponent'}!`);
     } catch (error) {
       console.error('Error checking timeout:', error);
-      alert('Failed to check timeout. Check console for details.');
+      alert('Failed to check timeout.');
     }
   };
 
   const shareResult = async () => {
-    if (farcasterUser && gameResult) {
-      try {
-        const castText = `${gameResult} Play Montacnad Tic-Tac-Toe at ${VERCEL_URL}!`;
-        await submitCast({
-          signer: farcasterUser.signer,
-          text: castText,
-        });
-        alert('Result shared on Farcaster!');
-      } catch (error) {
-        console.error('Error sharing result:', error);
-        alert('Failed to share result. Check console for details.');
-      }
+    if (!farcasterUser || !gameResult) return;
+    try {
+      const castText = `${gameResult} Play Montacnad Tic-Tac-Toe at ${VERCEL_URL}!`;
+      await submitCast({
+        signer: farcasterUser.signer,
+        text: castText,
+      });
+      alert('Result shared on Farcaster!');
+    } catch (error) {
+      console.error('Error sharing result:', error);
+      alert('Failed to share result.');
     }
   };
 
@@ -248,14 +254,14 @@ function GameBoard({ farcasterUser }: GameBoardProps) {
             placeholder="Opponent Address"
             value={opponent}
             onChange={(e) => setOpponent(e.target.value)}
-            class bitrate="p-2 rounded bg-gray-800 text-purple-200 w-full border-2 border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-400 animate-glow"
+            className="p-2 rounded bg-gray-800 text-purple-200 w-full border-2 border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-400 animate-glow"
           />
         )}
       </div>
       <button
         onClick={handleCreateGame}
         className="w-full bg-gradient-to-r from-purple-500 to-purple-700 text-white px-6 py-3 rounded-lg shadow-lg hover:from-purple-600 hover:to-purple-800 transition-all duration-300 transform hover:scale-105 animate-glow mb-6"
-        disabled={!userAddress || !signer}
+        disabled={!userAddress || !signer || !CONTRACT_ADDRESS}
       >
         Create Game (Stake 0.01 MON)
       </button>
