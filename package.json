@@ -1,11 +1,11 @@
 {
-  "name": "montacnad",
-  "version": "1.0.0",
-  "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test"
-  },
+    "name": "montacnad",
+    "version": "1.0.0",
+    "scripts": {
+      "start": "react-scripts start",
+      "build": "react-scripts build",
+      "test": "react-scripts test"
+  },
   "dependencies": {
     "@farcaster/auth-kit": "^0.3.0",
     "@farcaster/hub-web": "^0.8.0",
@@ -21,7 +21,7 @@
     "buffer": "^6.0.3",
     "wagmi": "^1.4.15",
     "viem": "^1.21.4"
-  },
+  },
   "devDependencies": {
     "prettier": "^3.3.3",
     "eslint": "^8.57.1",
